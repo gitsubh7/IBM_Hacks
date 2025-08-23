@@ -2,6 +2,8 @@ import os
 import uuid
 import datetime
 import sqlite3
+from flask import Flask, request                 
+from twilio.twiml.messaging_response import MessagingResponse 
 from ibm_watson_machine_learning.foundation_models import Model
 from dotenv import load_dotenv
 load_dotenv()
@@ -10,6 +12,11 @@ load_dotenv()
 API_KEY = os.getenv("API_KEY")
 PROJECT_ID = os.getenv("PROJECT_ID")
 URL = os.getenv("WML_URL")
+TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
+TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
+
+# --- Initialize Flask App --- 
+app = Flask(__name__)
 
 # --- Database Functions ---
 def setup_database():
@@ -41,46 +48,62 @@ def save_ticket(ticket_id, timestamp, complaint, category, status="New"):
     conn.close()
     print(f"--- ✅ Ticket {ticket_id} saved to database. ---")
 
-# --- Main Application ---
-def main():
-    """The main function to run our command-line AI agent."""
-    setup_database() # Set up the database on startup
-    print("--- Initializing AI Agent... ---")
-    try:
-        credentials = {"url": URL, "apikey": API_KEY}
-        model = Model(
-            model_id="ibm/granite-3-3-8b-instruct",
-            params={"max_new_tokens": 200, "repetition_penalty": 1.05},
-            credentials=credentials,
-            project_id=PROJECT_ID
-        )
-        print("--- ✅ AI Agent is ready. Type your complaint or 'exit' to quit. ---")
+# --- Initialize AI Model ---
+# We do this once when the server starts
+print("--- Initializing AI Agent... ---")
+try:
+    credentials = {"url": URL, "apikey": API_KEY}
+    ai_model = Model(
+        model_id="ibm/granite-3-3-8b-instruct",
+        params={"max_new_tokens": 200, "repetition_penalty": 1.05},
+        credentials=credentials,
+        project_id=PROJECT_ID
+    )
+    print("--- ✅ AI Agent is ready. ---")
+except Exception as e:
+    print(f"--- ❌ FAILED to initialize AI model: {e} ---")
+    ai_model = None
 
-        while True:
-            user_input = input("You: ")
-            
-            if user_input.lower() in ["exit", "quit"]:
-                print("Agent: Goodbye!")
-                break
-            
-            ticket_id = str(uuid.uuid4().hex)[:8].upper()
-            timestamp = datetime.datetime.now().strftime("%Y-%m-%d %I:%M %p")
 
-            prompt = f"You are an AI assistant. Analyze the complaint: '{user_input}'. Your only output should be the category: Road Maintenance, Garbage, Streetlight, or Water Supply."
-            
-            print("Agent: ...thinking...")
-            # We get the category first
-            ai_category = model.generate_text(prompt=prompt).strip()
+@app.route('/whatsapp', methods=['POST'])
+def whatsapp_listener():
+    """Listens for incoming WhatsApp messages and processes them."""
+    if not ai_model:
+        return "AI Model not initialized", 500
 
-            # Now we save the ticket with the determined category
-            save_ticket(ticket_id, timestamp, user_input, ai_category)
+    # 1. Get the user's message
+    user_complaint = request.form.get('Body', '').strip()
+    sender_phone = request.form.get('From', '')
+    print(f"\n--- New Message from {sender_phone} ---")
+    print(f"User: {user_complaint}")
 
-            # Then we create the user-facing response
-            print(f"Agent: Thank you for your report. We have successfully registered ticket number {ticket_id} under the '{ai_category}' category. We will address it shortly.")
+    # 2. Generate Ticket ID and Timestamp
+    ticket_id = str(uuid.uuid4().hex)[:8].upper()
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %I:%M %p")
+    
+    # 3. Use the AI to categorize the complaint
+    prompt = f"Analyze the complaint: '{user_complaint}'. Classify it into one of these categories: Road Maintenance, Garbage, Streetlight, or Water Supply. Respond with only the category name."
+    print("Agent: ...thinking...")
+    ai_category = ai_model.generate_text(prompt=prompt).strip()
 
-    except Exception as e:
-        print(f"--- ❌ FAILED: An error occurred ---")
-        print(e)
+    # 4. Save the ticket to our database
+    save_ticket(ticket_id, timestamp, user_complaint, ai_category)
+    
+    # 5. Create the reply message for WhatsApp
+    reply_message = (
+        f"Thank you for your report. Your ticket *{ticket_id}* has been registered "
+        f"under the category: *{ai_category}*. "
+        "We will address it shortly."
+    )
+    
+    print(f"Agent: Thank you for your report. We have successfully registered ticket number {ticket_id} under the '{ai_category}' category.")
+    
+    # 6. Send the reply via WhatsApp
+    response = MessagingResponse()
+    response.message(reply_message)
+    
+    return str(response)
 
 if __name__ == "__main__":
-    main()
+    setup_database()
+    app.run(debug=True) 
