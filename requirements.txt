@@ -1,0 +1,3 @@
+Flask
+python-dotenv
+ibm-watson-machine-learning
