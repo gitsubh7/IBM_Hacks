@@ -1,9 +1,7 @@
 import os
 from ibm_watson_machine_learning.foundation_models import Model
 
-API_KEY="p_m2rqizur4Vyh61dJjlcBwSgNXZKNDHkz4UJvciSfZ3"
-PROJECT_ID="dad68c71-8b3e-432f-b345-33168f931b22"
-URL="https://us-south.ml.cloud.ibm.com"
+
  
 
 def main():
