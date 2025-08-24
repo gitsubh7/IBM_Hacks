@@ -1,8 +1,13 @@
 import os
+from dotenv import load_dotenv
 from ibm_watson_machine_learning.foundation_models import Model
 
+load_dotenv()
+    
+API_KEY = os.getenv("API_KEY")
+PROJECT_ID = os.getenv("PROJECT_ID")
+URL = os.getenv("WML_URL")
 
- 
 
 def main():
     """The main function to run our command-line AI agent."""
