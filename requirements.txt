@@ -2,3 +2,5 @@ Flask
 python-dotenv
 ibm-watson-machine-learning
 twilio
+requests
+ibm-watson
